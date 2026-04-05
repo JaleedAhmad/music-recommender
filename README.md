@@ -10,6 +10,7 @@ VibeScribe is a premium, AI-driven music curation platform that translates your 
 *Enter your mood to begin the AI journey. The dynamic glassmorphic interface awaits your input.*
 
 <!-- SCREENSHOT_BEFORE_VIDEO -->
+![Login Page](/assets/screenshots/initial-ui.png)
 ![Initial UI](/assets/screenshots/initial-ui.png)
 <!-- Leave space for: Screenshot of the application before any mood is entered -->
 
