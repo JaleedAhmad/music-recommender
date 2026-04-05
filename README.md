@@ -9,10 +9,9 @@ VibeScribe is a premium, AI-driven music curation platform that translates your 
 ### 1. Initial State: Discover Your Vibe
 *Enter your mood to begin the AI journey. The dynamic glassmorphic interface awaits your input.*
 
-<!-- SCREENSHOT_BEFORE_VIDEO -->
-![Login Page](/assets/screenshots/initial-ui.png)
 ![Initial UI](/assets/screenshots/initial-ui.png)
-<!-- Leave space for: Screenshot of the application before any mood is entered -->
+![Initial UI](/assets/screenshots/initial-ui.png)
+
 
 ### 2. Result State: Immersive Experience
 *After analyzing your mood and local weather, the AI recommends a song, updates the color palette, and loads the official video player.*
