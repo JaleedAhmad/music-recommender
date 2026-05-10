@@ -9,7 +9,7 @@ import PlaylistModal from './components/PlaylistModal';
 import API_BASE_URL from './config';
 import './App.css';
 
-const ANIMATION_SPEEDS = [40, 20, 8]; // Slow, Medium, Fast
+const ANIMATION_SPEEDS = [15, 8, 3]; // Slow, Medium, Fast (Made faster to be noticeable)
 const MOOD_CHIPS = ['Chill ☕', 'Productive 💻', 'Energetic ⚡', 'Relaxed 🌊', 'Sad 🌧️', 'Happy ☀️'];
 
 function WelcomeScreen({ onGetStarted }) {
@@ -91,7 +91,7 @@ function App() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [colors, setColors] = useState(['#0f172a', '#1e293b', '#334155']); // Default slate colors
+  const [colors, setColors] = useState(['#4f46e5', '#7c3aed', '#2563eb']); // Vibrant Indigo/Purple/Blue
   const [isAnimationActive, setIsAnimationActive] = useState(true);
   const [speedIndex, setSpeedIndex] = useState(1); // Default medium
   const [youtubeVideoId, setYoutubeVideoId] = useState(null);
