@@ -14,6 +14,22 @@ const hpp = require('hpp');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+console.log("🚀 Starting AuraBeat Backend...");
+console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`Port: ${PORT}`);
+
+process.on('uncaughtException', (err) => {
+    console.error('🔥 UNCAUGHT EXCEPTION! Shutting down...');
+    console.error(err.name, err.message);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+    console.error('🔥 UNHANDLED REJECTION! Shutting down...');
+    console.error(err.name, err.message);
+    process.exit(1);
+});
+
 // --- Security Middleware ---
 app.use(helmet()); // Set security headers
 app.use(mongoSanitize()); // Prevent NoSQL injection
