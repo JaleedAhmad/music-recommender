@@ -1,18 +1,21 @@
+/** AuraBeat Landing Page v1.1 - Fixed Hoisting */
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Music, Zap, Sparkles, History, Github } from 'lucide-react';
 
-const FeatureCard = ({ icon, title, desc }) => (
-  <div className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-indigo-500/30 transition-all group">
-    <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-      {icon}
+function FeatureCard({ icon, title, desc }) {
+  return (
+    <div className="p-6 bg-white/5 border border-white/10 rounded-2xl hover:border-indigo-500/30 transition-all group">
+      <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+        {icon}
+      </div>
+      <h3 className="text-white font-bold mb-2">{title}</h3>
+      <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
     </div>
-    <h3 className="text-white font-bold mb-2">{title}</h3>
-    <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
-  </div>
-);
+  );
+}
 
-const LandingPage = ({ onGetStarted }) => {
+function LandingPage({ onGetStarted }) {
   return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center relative overflow-hidden px-4">
       {/* Abstract Background Elements */}
@@ -90,6 +93,6 @@ const LandingPage = ({ onGetStarted }) => {
       </footer>
     </div>
   );
-};
+}
 
 export default LandingPage;
