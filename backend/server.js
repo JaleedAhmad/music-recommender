@@ -12,6 +12,9 @@ const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 
 const app = express();
+
+// Trust proxy for Render/Vercel (required for express-rate-limit)
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 console.log("🚀 Starting AuraBeat Backend...");
