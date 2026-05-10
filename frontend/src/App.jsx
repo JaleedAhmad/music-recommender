@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Music, Zap, ZapOff, FastForward, Loader2, Thermometer, Cloud, Sun, History, Sparkles } from 'lucide-react';
+import { Send, Music, Zap, ZapOff, FastForward, Loader2, Thermometer, Cloud, Sun, History, Sparkles, User, LogOut, Video, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from './AuthContext';
+import AuthModal from './components/AuthModal';
+import HistorySidebar from './components/HistorySidebar';
+import PlaylistModal from './components/PlaylistModal';
+import API_BASE_URL from './config';
 import './App.css';
 
 const ANIMATION_SPEEDS = [40, 20, 8]; // Slow, Medium, Fast
@@ -32,6 +37,10 @@ function App() {
   const [youtubeVideoId, setYoutubeVideoId] = useState(null);
   const [weatherData, setWeatherData] = useState(null);
   const [location, setLocation] = useState(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
+  const { user, token, logout } = useAuth();
   const chatEndRef = useRef(null);
 
   // Scroll to bottom on new messages
@@ -56,7 +65,9 @@ function App() {
     navigator.geolocation.getCurrentPosition(async (position) => {
       const { latitude, longitude } = position.coords;
       try {
-        const response = await fetch(`http://localhost:3001/api/get-recommendation?lat=${latitude}&lon=${longitude}&mood=${encodeURIComponent(userMood)}`);
+        const response = await fetch(`${API_BASE_URL}/api/get-recommendation?lat=${latitude}&lon=${longitude}&mood=${encodeURIComponent(userMood)}`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
         
         if (!response.ok) {
           const errorData = await response.json();
@@ -85,6 +96,18 @@ function App() {
                 <Sparkles className="w-3.5 h-3.5 mt-0.5 text-yellow-400 shrink-0" />
                 <span>{data.recommendation.reason}</span>
               </p>
+              
+              {data.recommendation.spotifyUrl && (
+                <a 
+                  href={data.recommendation.spotifyUrl} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="mt-4 flex items-center justify-center gap-2 w-full py-2 bg-[#1DB954]/20 hover:bg-[#1DB954]/40 text-[#1DB954] rounded-lg text-xs font-bold transition-all border border-[#1DB954]/20"
+                >
+                  <Music className="w-3.5 h-3.5" />
+                  Listen on Spotify
+                </a>
+              )}
             </motion.div>
           </div>
         );
@@ -162,7 +185,7 @@ function App() {
                 <Music className="text-indigo-300 w-6 h-6" />
               </div>
               <div>
-                <h1 className="font-extrabold text-xl tracking-tight leading-none text-white drop-shadow-sm">VibeScribe</h1>
+                <h1 className="font-extrabold text-xl tracking-tight leading-none text-white drop-shadow-sm">AuraBeat</h1>
                 <p className="text-[10px] uppercase tracking-widest text-indigo-300 font-black mt-1.5 opacity-90">AI Sound Curator</p>
               </div>
             </div>
@@ -185,6 +208,38 @@ function App() {
               >
                 {isAnimationActive ? <Zap className="w-5 h-5 text-yellow-400" /> : <ZapOff className="w-5 h-5" />}
               </button>
+
+              <div className="w-px h-6 bg-white/10 mx-1" />
+
+              {user ? (
+                <div className="flex items-center gap-2">
+                   <button 
+                    onClick={() => setIsHistoryOpen(true)}
+                    className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-slate-300 hover:text-white"
+                    title="History"
+                  >
+                    <History className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={logout}
+                    className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-red-400 hover:bg-red-500/10"
+                    title="Logout"
+                  >
+                    <LogOut className="w-5 h-5" />
+                  </button>
+                  <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white uppercase shadow-lg shadow-indigo-500/30">
+                    {user.username[0]}
+                  </div>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all border border-white/10"
+                >
+                  <User className="w-4 h-4" />
+                  Login
+                </button>
+              )}
             </div>
           </div>
 
@@ -266,6 +321,19 @@ function App() {
               >
                 <Send className="w-5 h-5" />
               </motion.button>
+              
+              {user && (
+                <motion.button 
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  type="button"
+                  onClick={() => setIsPlaylistOpen(true)}
+                  className="bg-red-500 hover:bg-red-600 text-white px-6 rounded-2xl transition-all shadow-lg shadow-red-500/30 flex items-center justify-center gap-2"
+                  title="Vibe my Playlist"
+                >
+                  <Video className="w-5 h-5" />
+                </motion.button>
+              )}
             </form>
           </div>
         </motion.div>
@@ -322,6 +390,45 @@ function App() {
         </motion.div>
 
       </div>
+
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <HistorySidebar isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
+      <PlaylistModal 
+        isOpen={isPlaylistOpen} 
+        onClose={() => setIsPlaylistOpen(false)} 
+        onRecommendation={(data) => {
+            setWeatherData(data.weather);
+            setLocation(data.location);
+            setYoutubeVideoId(data.youtubeVideoId);
+            setColors(data.colors);
+            const botResponse = (
+              <div className="space-y-3">
+                <p className="text-sm opacity-80 flex items-center gap-2"><Video className="w-3 h-3 text-red-500" /> From your playlist:</p>
+                <motion.div 
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="bg-white/10 p-4 rounded-xl border border-white/20 backdrop-blur-md shadow-lg"
+                >
+                  <p className="font-bold text-lg text-red-400">"{data.recommendation.song}"</p>
+                  <p className="text-sm text-slate-100 font-medium mt-1">by {data.recommendation.artist}</p>
+                  <p className="text-xs italic text-slate-200 border-t border-white/10 mt-3 pt-3 flex items-start gap-2 leading-relaxed">
+                    <Sparkles className="w-3.5 h-3.5 mt-0.5 text-yellow-400 shrink-0" />
+                    <span>{data.recommendation.reason}</span>
+                  </p>
+                  <a 
+                    href={data.recommendation.spotifyUrl} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="mt-4 flex items-center justify-center gap-2 w-full py-2 bg-[#1DB954]/20 hover:bg-[#1DB954]/40 text-[#1DB954] rounded-lg text-xs font-bold transition-all"
+                  >
+                    Listen on Spotify
+                  </a>
+                </motion.div>
+              </div>
+            );
+            setMessages(prev => [...prev, { role: 'bot', text: botResponse }]);
+        }}
+      />
     </div>
   );
 }

@@ -3,10 +3,92 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('express-mongo-sanitize');
+const hpp = require('hpp');
 
 const app = express();
-const PORT = 3001;
-app.use(cors());
+const PORT = process.env.PORT || 3001;
+
+// --- Security Middleware ---
+app.use(helmet()); // Set security headers
+app.use(mongoSanitize()); // Prevent NoSQL injection
+app.use(hpp()); // Prevent HTTP Parameter Pollution
+
+// Rate Limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: "Too many requests from this IP, please try again after 15 minutes"
+});
+app.use('/api/', limiter);
+
+// CORS Configuration
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    process.env.FRONTEND_URL // Will be added during deployment
+].filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
+
+app.use(express.json({ limit: '10kb' })); // Body parser with limit
+
+// --- MongoDB Connection ---
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/aurabeat')
+    .then(() => console.log("✅ Connected to MongoDB"))
+    .catch(err => console.error("❌ MongoDB connection error:", err));
+
+// --- Schemas ---
+const userSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const recommendationSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    mood: String,
+    location: String,
+    weather: { temperature: Number, description: String },
+    song: String,
+    artist: String,
+    reason: String,
+    youtubeVideoId: String,
+    colors: [String],
+    createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+const Recommendation = mongoose.model('Recommendation', recommendationSchema);
+
+// --- Auth Middleware ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return next(); // Continue as guest
+
+    jwt.verify(token, process.env.JWT_SECRET || 'secret', (err, user) => {
+        if (err) return res.status(403).json({ message: "Invalid or expired token" });
+        req.user = user;
+        next();
+    });
+};
 
 // --- Gemini API Helper Function with Retry Mechanism ---
 async function callGeminiAPI(prompt, retryCount = 0) {
@@ -68,6 +150,19 @@ async function searchYouTubeVideo(song, artist) {
     }
 }
 
+// --- YouTube Playlist Helper ---
+async function getPlaylistItems(playlistId) {
+    try {
+        const apiKey = process.env.YOUTUBE_API_KEY;
+        const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${apiKey}`;
+        const response = await axios.get(url);
+        return response.data.items.map(item => item.snippet.title);
+    } catch (error) {
+        console.error("Error fetching playlist items:", error.message);
+        return [];
+    }
+}
+
 // --- Geocoding Helper Function ---
 async function getCityName(lat, lon) {
     try {
@@ -89,7 +184,7 @@ function getWeatherDescription(code) {
 }
 
 // --- Main API Endpoint ---
-app.get('/api/get-recommendation', async (req, res) => {
+app.get('/api/get-recommendation', authenticateToken, async (req, res) => {
     try {
         const { lat, lon, mood } = req.query;
         if (!lat || !lon || !mood) {
@@ -121,19 +216,167 @@ app.get('/api/get-recommendation', async (req, res) => {
 
         const youtubeVideoId = await searchYouTubeVideo(song, artist);
 
-        res.json({
+        const recommendationData = {
             weather: { temperature: temp, description: weatherDescription },
-            recommendation: { song: song || songRecommendationText, artist: artist || "Unknown Artist", reason: reason },
+            recommendation: { 
+                song: song || songRecommendationText, 
+                artist: artist || "Unknown Artist", 
+                reason: reason,
+                spotifyUrl: `https://open.spotify.com/search/${encodeURIComponent(songRecommendationText)}`
+            },
             location: locationName,
             youtubeVideoId: youtubeVideoId,
             colors: colors,
-        });
+        };
+
+        // Save to database if user is logged in
+        if (req.user) {
+            try {
+                const newRec = new Recommendation({
+                    userId: req.user.id,
+                    mood,
+                    location: locationName,
+                    weather: { temperature: temp, description: weatherDescription },
+                    song: song || songRecommendationText,
+                    artist: artist || "Unknown Artist",
+                    reason,
+                    youtubeVideoId,
+                    colors
+                });
+                await newRec.save();
+                console.log("✅ Recommendation saved for user:", req.user.username);
+            } catch (dbError) {
+                console.error("Failed to save recommendation:", dbError.message);
+            }
+        }
+
+        res.json(recommendationData);
 
     } catch (error) {
         console.error("Error in backend:", error.message);
         res.status(500).json({ message: error.message });
     }
 });
+// --- Playlist Vibe Endpoint ---
+app.post('/api/playlist/vibe', authenticateToken, async (req, res) => {
+    try {
+        const { playlistUrl, mood, lat, lon } = req.body;
+        if (!playlistUrl || !mood) return res.status(400).json({ message: "Playlist URL and mood required" });
+
+        // Extract playlist ID
+        const playlistId = playlistUrl.includes('list=') ? playlistUrl.split('list=')[1].split('&')[0] : playlistUrl;
+        
+        const songList = await getPlaylistItems(playlistId);
+        if (songList.length === 0) return res.status(400).json({ message: "Could not fetch songs from playlist" });
+
+        const [weatherResponse, locationName] = await Promise.all([
+            axios.get(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`),
+            getCityName(lat, lon)
+        ]);
+        const temp = weatherResponse.data.current.temperature_2m;
+        const weatherDescription = getWeatherDescription(weatherResponse.data.current.weather_code);
+
+        const prompt = `You are a music curator. From this list of songs: [${songList.slice(0, 30).join(', ')}], pick the ONE song that best fits a mood of "${mood}" in ${locationName} (${temp}°C, ${weatherDescription}). Provide a poetic reason and three hex colors. Format: Song Title by Artist | Reason | #hex1,#hex2,#hex3`;
+
+        const responseText = await callGeminiAPI(prompt);
+        const parts = responseText.split('|').map(s => s.trim());
+        const songRec = parts[0];
+        const reason = parts[1] || "Selected from your playlist.";
+        const colors = (parts[2] || '#0f2027,#203a43,#2c5364').split(',');
+
+        const [song, artist] = songRec.split(' by ').map(s => s.trim());
+        const youtubeVideoId = await searchYouTubeVideo(song, artist);
+
+        const result = {
+            weather: { temperature: temp, description: weatherDescription },
+            recommendation: { 
+                song: song || songRec, 
+                artist: artist || "Unknown Artist", 
+                reason,
+                spotifyUrl: `https://open.spotify.com/search/${encodeURIComponent(songRec)}`
+            },
+            location: locationName,
+            youtubeVideoId,
+            colors
+        };
+
+        if (req.user) {
+            const newRec = new Recommendation({
+                userId: req.user.id,
+                mood: `Playlist: ${mood}`,
+                location: locationName,
+                weather: { temperature: temp, description: weatherDescription },
+                song: song || songRec,
+                artist: artist || "Unknown Artist",
+                reason,
+                youtubeVideoId,
+                colors
+            });
+            await newRec.save();
+        }
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- Auth Routes ---
+app.post('/api/auth/signup', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ message: "Username and password required" });
+
+        const existingUser = await User.findOne({ username });
+        if (existingUser) return res.status(400).json({ message: "Username already exists" });
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = new User({ username, password: hashedPassword });
+        await user.save();
+
+        const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret');
+        res.json({ token, user: { username: user.username } });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const user = await User.findOne({ username });
+        if (!user) return res.status(400).json({ message: "User not found" });
+
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) return res.status(400).json({ message: "Invalid password" });
+
+        const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret');
+        res.json({ token, user: { username: user.username } });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- History Route ---
+app.get('/api/history', authenticateToken, async (req, res) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    try {
+        const history = await Recommendation.find({ userId: req.user.id }).sort({ createdAt: -1 });
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// --- Production Setup ---
+if (process.env.NODE_ENV === 'production') {
+    const path = require('path');
+    app.use(express.static(path.join(__dirname, '../frontend/dist')));
+    
+    app.get('*', (req, res) => {
+        res.sendFile(path.resolve(__dirname, '../frontend', 'dist', 'index.html'));
+    });
+}
 
 // Start the server
 app.listen(PORT, () => {

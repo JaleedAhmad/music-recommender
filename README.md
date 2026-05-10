@@ -1,4 +1,4 @@
-# AuraBeat: AI-Powered Sound Curator 🎵
+# AuraBeat: Context-Aware Music Recommendation 🎵
 
 AuraBeat is a premium, AI-driven music curation platform that translates your current mood and environment into the perfect auditory experience. By blending real-time sentiment analysis, local weather data, and Google's Gemini AI, AuraBeat delivers a personalized soundscape that matches your exact vibe.
 
