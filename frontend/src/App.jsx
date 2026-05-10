@@ -5,7 +5,7 @@ import { useAuth } from './AuthContext';
 import AuthModal from './components/AuthModal';
 import HistorySidebar from './components/HistorySidebar';
 import PlaylistModal from './components/PlaylistModal';
-import LandingPage from './components/LandingPage';
+import WelcomeScreen from './components/WelcomeScreen';
 import API_BASE_URL from './config';
 import './App.css';
 
@@ -151,7 +151,7 @@ function App() {
   if (!user) {
     return (
       <>
-        <LandingPage onGetStarted={() => setIsAuthModalOpen(true)} />
+        <WelcomeScreen onGetStarted={() => setIsAuthModalOpen(true)} />
         <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       </>
     );

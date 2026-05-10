@@ -1,4 +1,4 @@
-/** AuraBeat Landing Page v1.1 - Fixed Hoisting */
+/** AuraBeat Welcome Screen - Fresh Build */
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Music, Zap, Sparkles, History, Github } from 'lucide-react';
@@ -15,7 +15,7 @@ function FeatureCard({ icon, title, desc }) {
   );
 }
 
-function LandingPage({ onGetStarted }) {
+export default function WelcomeScreen({ onGetStarted }) {
   return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center relative overflow-hidden px-4">
       {/* Abstract Background Elements */}
@@ -94,5 +94,3 @@ function LandingPage({ onGetStarted }) {
     </div>
   );
 }
-
-export default LandingPage;
