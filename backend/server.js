@@ -25,7 +25,7 @@ const limiter = rateLimit({
     max: 100, // limit each IP to 100 requests per windowMs
     message: "Too many requests from this IP, please try again after 15 minutes"
 });
-app.use('/api/', limiter);
+app.use('/api', limiter);
 
 // CORS Configuration
 const allowedOrigins = [
@@ -373,7 +373,7 @@ if (process.env.NODE_ENV === 'production') {
     const path = require('path');
     app.use(express.static(path.join(__dirname, '../frontend/dist')));
     
-    app.get('*', (req, res) => {
+    app.get('(.*)', (req, res) => {
         res.sendFile(path.resolve(__dirname, '../frontend', 'dist', 'index.html'));
     });
 }
