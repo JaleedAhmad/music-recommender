@@ -403,6 +403,12 @@ if (process.env.NODE_ENV === 'production') {
     }
 }
 
+// --- Global 404 JSON Handler ---
+// This ensures that even if a route is missing, the frontend gets JSON, not HTML.
+app.use((req, res) => {
+    res.status(404).json({ message: `Route ${req.originalUrl} not found on this server.` });
+});
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`✅ Backend server is running at http://localhost:${PORT}`);
