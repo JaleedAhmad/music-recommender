@@ -387,11 +387,17 @@ app.get('/api/history', authenticateToken, async (req, res) => {
 // --- Production Setup ---
 if (process.env.NODE_ENV === 'production') {
     const path = require('path');
-    app.use(express.static(path.join(__dirname, '../frontend/dist')));
+    const fs = require('fs');
+    const distPath = path.join(__dirname, '../frontend/dist');
     
-    app.get('*', (req, res) => {
-        res.sendFile(path.resolve(__dirname, '../frontend', 'dist', 'index.html'));
-    });
+    if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (req, res) => {
+            res.sendFile(path.resolve(distPath, 'index.html'));
+        });
+    } else {
+        console.log("ℹ️ Frontend dist folder not found. Serving API only.");
+    }
 }
 
 // Start the server
