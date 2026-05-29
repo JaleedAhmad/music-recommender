@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/Backend-Node.js-009688?style=for-the-badge&logo=nodedotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/AI-Gemini%202.5%20Flash-FF6F00?style=for-the-badge&logo=google&logoColor=white" />
   <img src="https://img.shields.io/badge/Video-YouTube%20API-FFCA28?style=for-the-badge&logo=youtube&logoColor=white" />
-  <img src="https://img.shields.io/badge/Language-TypeScript-3776AB?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/Language-JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" />
   <img src="https://img.shields.io/badge/Built%20with-Google%20Antigravity-34A853?style=for-the-badge&logo=google&logoColor=white" />
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" />
 </p>
@@ -77,14 +77,14 @@ graph TD
     subgraph Backend [Node + Express Backend]
         B["API Gateway / Router"]
         
-        subgraph Agents [AI & Context Pipeline]
-            C1["1. Environmental Context"]
-            C2["2. Sentiment Analysis"]
-            C3["3. Curation Engine"]
+        subgraph Pipeline [Context & Logic Pipeline]
+            C1["1. Environmental Fetch"]
+            C2["2. Prompt Construction"]
+            C3["3. AI Inference"]
             C1 --> C2 --> C3
         end
         
-        B <--> Agents
+        B <--> Pipeline
     end
 
     %% Inference Layer
@@ -97,9 +97,9 @@ graph TD
     %% Connections
     A <-->|POST Request| B
     
-    Agents <--> D
-    Agents <--> E
-    Agents <--> F
+    Pipeline <--> D
+    Pipeline <--> E
+    Pipeline <--> F
     
     B -->|JSON Payload| A
 ```
