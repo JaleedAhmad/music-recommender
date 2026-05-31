@@ -1,20 +1,47 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&display=swap');
 
 @theme {
-  --font-sans: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans: "DM Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Syne", "Inter", system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  --color-primary: #0f2027;
+  --color-secondary: #203a43;
+  --color-accent: #2c5364;
+  transition: --color-primary 0.8s ease, --color-secondary 0.8s ease, --color-accent 0.8s ease;
+}
+
+/* Fallback for browsers that don't support transition on custom properties yet */
+@property --color-primary {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #0f2027;
+}
+@property --color-secondary {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #203a43;
+}
+@property --color-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2c5364;
 }
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 min-h-screen transition-all duration-[1500ms] ease-in-out antialiased;
-    background-size: 400% 400%;
+    @apply bg-[#080808] text-slate-100 min-h-screen antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
   }
 }
 
 @layer components {
   .ui-panel {
-    @apply bg-black/40 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-white/10;
+    @apply bg-[rgba(255,255,255,0.04)] backdrop-blur-[20px] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] border border-[rgba(255,255,255,0.08)];
   }
   
   .ui-header {

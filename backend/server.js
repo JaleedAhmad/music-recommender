@@ -34,9 +34,13 @@ process.on('unhandledRejection', (err) => {
 });
 
 // --- Security Middleware ---
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET is not defined in environment variables');
+}
 app.use(helmet()); // Set security headers
-app.use(mongoSanitize()); // Prevent NoSQL injection
+app.use(mongoSanitize({ replaceWith: '_' })); // Prevent NoSQL injection
 app.use(hpp()); // Prevent HTTP Parameter Pollution
+
 
 // Rate Limiting
 const limiter = rateLimit({
@@ -55,16 +59,7 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow localhost, the explicit FRONTEND_URL, and any vercel.app subdomain
-        const isVercel = origin && origin.endsWith('.vercel.app');
-        if (!origin || allowedOrigins.includes(origin) || isVercel) {
-            callback(null, true);
-        } else {
-            console.warn(`🚫 CORS blocked for origin: ${origin}`);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
+    origin: (origin, callback) => callback(null, true),
     credentials: true
 }));
 
@@ -103,9 +98,9 @@ const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    if (!token) return next(); // Continue as guest
+    if (!token) return res.status(401).json({ message: 'Access denied' });
 
-    jwt.verify(token, process.env.JWT_SECRET || 'secret', (err, user) => {
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ message: "Invalid or expired token" });
         req.user = user;
         next();
@@ -113,37 +108,91 @@ const authenticateToken = (req, res, next) => {
 };
 
 // --- Gemini API Helper Function with Retry Mechanism ---
-async function callGeminiAPI(prompt, retryCount = 0) {
+async function callGemini(prompt, retryCount = 0) {
     const MAX_RETRIES = 3;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
         throw new Error("Gemini API key is not set in the .env file.");
     }
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    console.log(`Calling Gemini API: ${url.replace(apiKey, 'REDACTED_KEY')}`);
 
     try {
         const response = await axios.post(url, {
-            contents: [{ parts: [{ text: prompt }] }]
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
         }, {
             headers: { 'Content-Type': 'application/json' }
         });
         if (response.data.candidates && response.data.candidates.length > 0) {
-            return response.data.candidates[0].content.parts[0].text;
+            const content = response.data.candidates[0].content.parts[0].text;
+            return JSON.parse(content);
         }
         throw new Error("AI model returned an empty or invalid response.");
     } catch (error) {
+        if (error instanceof SyntaxError) {
+            throw new Error("Gemini failed to return valid JSON.");
+        }
         // Handle 429 Quota/Rate Limit error with retry
         if (error.response && error.response.status === 429 && retryCount < MAX_RETRIES) {
             const delay = Math.pow(2, retryCount) * 2000 + 10000; // Exponential backoff + 10s base
             console.log(`⚠️ Quota hit (429). Retrying in ${delay / 1000}s... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
             await new Promise(resolve => setTimeout(resolve, delay));
-            return callGeminiAPI(prompt, retryCount + 1);
+            return callGemini(prompt, retryCount + 1);
         }
 
         console.error("Error calling Gemini API:", error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error(`Failed to get a response from the AI model: ${error.message}`);
     }
+}
+
+// --- Groq API Helper Function ---
+async function callGroq(prompt) {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+        throw new Error("Groq API key is not set in the .env file.");
+    }
+    const url = 'https://api.groq.com/openai/v1/chat/completions';
+
+    try {
+        const response = await axios.post(url, {
+            model: "llama-3.3-70b-versatile",
+            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" }
+        }, {
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            }
+        });
+        
+        if (response.data.choices && response.data.choices.length > 0) {
+            const content = response.data.choices[0].message.content;
+            return JSON.parse(content);
+        }
+        throw new Error("Groq model returned an empty or invalid response.");
+    } catch (error) {
+        if (error instanceof SyntaxError) {
+             throw new Error("Groq failed to return valid JSON.");
+        }
+        throw new Error(`Failed to get a response from Groq: ${error.response ? JSON.stringify(error.response.data) : error.message}`);
+    }
+}
+
+// --- LLM Fallback Chain ---
+async function callLLM(prompt) {
+  try {
+    return await callGemini(prompt);
+  } catch (e) {
+    console.warn('Gemini failed, falling back to Groq:', e.message);
+  }
+
+  try {
+    return await callGroq(prompt);
+  } catch (e) {
+    console.warn('Groq failed:', e.message);
+  }
+
+  throw new Error('All LLM providers failed');
 }
 
 
@@ -205,10 +254,35 @@ function getWeatherDescription(code) {
     return descriptions[code] || 'Unknown weather';
 }
 
-// --- Main API Endpoint ---
-app.get('/api/get-recommendation', authenticateToken, async (req, res) => {
+// --- Last.fm API Endpoint ---
+app.get('/api/lastfm/:username', authenticateToken, async (req, res) => {
     try {
-        const { lat, lon, mood } = req.query;
+        const { username } = req.params;
+        const apiKey = process.env.LASTFM_API_KEY;
+        if (!apiKey) {
+            console.warn("Last.fm API key is missing. Returning empty array.");
+            return res.json([]);
+        }
+        
+        const url = `http://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(username)}&api_key=${apiKey}&format=json&limit=10`;
+        const response = await axios.get(url);
+        
+        if (response.data && response.data.topartists && response.data.topartists.artist) {
+            const artists = response.data.topartists.artist.map(a => a.name);
+            return res.json(artists);
+        }
+        
+        res.json([]);
+    } catch (error) {
+        console.error("Last.fm fetch error:", error.message);
+        res.json([]); // Return empty array on failure as per spec
+    }
+});
+
+// --- Main API Endpoint ---
+app.post('/api/recommend', authenticateToken, async (req, res) => {
+    try {
+        const { mood, lat, lon, moodHistory, lastfmArtists, bpmPreference, energyPreference } = req.body;
         if (!lat || !lon || !mood) {
             return res.status(400).json({ message: "Latitude, longitude, and mood are required." });
         }
@@ -222,33 +296,74 @@ app.get('/api/get-recommendation', authenticateToken, async (req, res) => {
         const temp = weatherResponse.data.current.temperature_2m;
         const weatherDescription = getWeatherDescription(weatherResponse.data.current.weather_code);
 
-        // --- UPDATED PROMPT FOR DYNAMIC COLORS & REASON ---
-        const prompt = `You are a creative DJ and a color theorist. A user in ${locationName} (currently ${temp}°C and ${weatherDescription}) is feeling "${mood}". Suggest ONE perfect song for this exact vibe. Also, provide a short, poetic reason for your choice (max 15 words) and three elegant hex color codes that represent this atmosphere. IMPORTANT: Respond ONLY in this exact format, with pipes: Song Title by Artist | Reason | #hex1,#hex2,#hex3`;
+        const hour = new Date().getHours();
+        const timeOfDay = hour < 6 ? 'late night' 
+            : hour < 12 ? 'morning' 
+            : hour < 17 ? 'afternoon' 
+            : hour < 21 ? 'evening' 
+            : 'night';
 
-        const responseText = await callGeminiAPI(prompt);
-        const parts = responseText.split('|').map(s => s.trim());
-        const songRecommendationText = parts[0];
-        const reason = parts[1] || "Selected for your vibe.";
-        const colorString = parts[2] || '#0f2027,#203a43,#2c5364'; // Default palette
+        const historyContext = moodHistory && moodHistory.length > 0 
+            ? moodHistory.map(h => `${h.mood} -> ${h.song} by ${h.artist}`).join('\n') 
+            : "No history yet";
+            
+        const artistsContext = lastfmArtists && lastfmArtists.length > 0
+            ? lastfmArtists.join(', ')
+            : "Not provided";
 
-        const colors = colorString.split(',');
-        console.log("Color Palette from Gemini:", colors);
+        const prompt = `You are a music curator AI. Given the following context, recommend ONE song.
 
-        const [song, artist] = songRecommendationText.split(' by ').map(s => s.trim());
+User mood: ${mood}
+Time of day: ${timeOfDay}
+Weather: ${weatherDescription}, ${temp}°C
+Location: ${locationName}
 
+User's past mood->song history (most recent first, use for personalization):
+${historyContext}
+
+User's favorite artists from Last.fm (tailor recommendations toward these):
+${artistsContext}
+
+User energy preference: ${energyPreference || "not specified"}
+User BPM preference: ${bpmPreference || "not specified"}
+
+Respond ONLY with a valid JSON object — no markdown, no backticks, no explanation. Schema:
+{
+  "song": "string",
+  "artist": "string",
+  "reason": "string (2 sentences max)",
+  "colors": { "primary": "hex", "secondary": "hex", "accent": "hex", "text": "hex" },
+  "bpm": 120,
+  "energy": "high | medium | low",
+  "mood_tag": "string"
+}`;
+
+        const llmResponse = await callLLM(prompt);
+
+        console.log("LLM Response JSON:", llmResponse);
+
+        const song = llmResponse.song || "Unknown Song";
+        const artist = llmResponse.artist || "Unknown Artist";
+        const reason = llmResponse.reason || "Selected for your vibe.";
+        const colors = llmResponse.colors ? [llmResponse.colors.primary, llmResponse.colors.secondary, llmResponse.colors.accent] : ['#0f2027','#203a43','#2c5364'];
+        
         const youtubeVideoId = await searchYouTubeVideo(song, artist);
 
         const recommendationData = {
             weather: { temperature: temp, description: weatherDescription },
             recommendation: { 
-                song: song || songRecommendationText, 
-                artist: artist || "Unknown Artist", 
+                song: song, 
+                artist: artist, 
                 reason: reason,
-                spotifyUrl: `https://open.spotify.com/search/${encodeURIComponent(songRecommendationText)}`
+                spotifyUrl: `https://open.spotify.com/search/${encodeURIComponent(song + " " + artist)}`
             },
             location: locationName,
             youtubeVideoId: youtubeVideoId,
             colors: colors,
+            bpm: llmResponse.bpm || 120,
+            energy: llmResponse.energy || "medium",
+            mood_tag: llmResponse.mood_tag || "chill",
+            aiColors: llmResponse.colors // Include the full colors object for the frontend
         };
 
         // Save to database if user is logged in
@@ -259,8 +374,8 @@ app.get('/api/get-recommendation', authenticateToken, async (req, res) => {
                     mood,
                     location: locationName,
                     weather: { temperature: temp, description: weatherDescription },
-                    song: song || songRecommendationText,
-                    artist: artist || "Unknown Artist",
+                    song: song,
+                    artist: artist,
                     reason,
                     youtubeVideoId,
                     colors
@@ -346,8 +461,21 @@ app.post('/api/playlist/vibe', authenticateToken, async (req, res) => {
 // --- Auth Routes ---
 app.post('/api/auth/signup', async (req, res) => {
     try {
-        const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ message: "Username and password required" });
+        let { username, password } = req.body;
+        
+        if (typeof username !== 'string' || typeof password !== 'string') {
+            return res.status(400).json({ message: 'Invalid input' });
+        }
+        
+        username = username.trim();
+        password = password.trim();
+        
+        if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+            return res.status(400).json({ message: "Username must be 3-30 characters long and contain only letters, numbers, and underscores." });
+        }
+        if (password.length < 8) {
+            return res.status(400).json({ message: "Password must be at least 8 characters long." });
+        }
 
         const existingUser = await User.findOne({ username });
         if (existingUser) return res.status(400).json({ message: "Username already exists" });
@@ -356,7 +484,7 @@ app.post('/api/auth/signup', async (req, res) => {
         const user = new User({ username, password: hashedPassword });
         await user.save();
 
-        const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret');
+        const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
         res.json({ token, user: { username: user.username } });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -365,14 +493,26 @@ app.post('/api/auth/signup', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        let { username, password } = req.body;
+        
+        if (typeof username !== 'string' || typeof password !== 'string') {
+            return res.status(400).json({ message: 'Invalid input' });
+        }
+        
+        username = username.trim();
+        password = password.trim();
+        
+        if (!/^[a-zA-Z0-9_]{3,30}$/.test(username) || password.length < 8) {
+            return res.status(401).json({ message: 'Invalid username or password' });
+        }
+
         const user = await User.findOne({ username });
-        if (!user) return res.status(400).json({ message: "User not found" });
+        if (!user) return res.status(401).json({ message: 'Invalid username or password' });
 
         const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) return res.status(400).json({ message: "Invalid password" });
+        if (!validPassword) return res.status(401).json({ message: 'Invalid username or password' });
 
-        const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret');
+        const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '7d' });
         res.json({ token, user: { username: user.username } });
     } catch (error) {
         res.status(500).json({ message: error.message });
