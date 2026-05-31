@@ -4,16 +4,15 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Web-brightgreen?style=for-the-badge&logo=react&logoColor=white" />
   <img src="https://img.shields.io/badge/Backend-Node.js-009688?style=for-the-badge&logo=nodedotjs&logoColor=white" />
-  <img src="https://img.shields.io/badge/AI-Gemini%202.5%20Flash-FF6F00?style=for-the-badge&logo=google&logoColor=white" />
+  <img src="https://img.shields.io/badge/Database-MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white" />
+  <img src="https://img.shields.io/badge/AI-Gemini%20%7C%20Groq-FF6F00?style=for-the-badge&logo=google&logoColor=white" />
   <img src="https://img.shields.io/badge/Video-YouTube%20API-FFCA28?style=for-the-badge&logo=youtube&logoColor=white" />
-  <img src="https://img.shields.io/badge/Language-JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" />
-  <img src="https://img.shields.io/badge/Built%20with-Google%20Antigravity-34A853?style=for-the-badge&logo=google&logoColor=white" />
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" />
 </p>
 
 ---
 
-AuraBeat is a premium, AI-driven music curation platform that translates your current mood and environment into the perfect auditory experience. By blending real-time sentiment analysis, local weather data, and Google's Gemini AI, AuraBeat delivers a personalized soundscape that matches your exact vibe, complete with dynamic aesthetic adaptations.
+AuraBeat is a premium, AI-driven music curation platform that translates your current mood, music preferences, and environment into the perfect auditory experience. By blending real-time sentiment analysis, local weather data, Last.fm listening history, and a resilient LLM Waterfall system (Google Gemini + Groq), AuraBeat delivers a highly personalized soundscape, complete with dynamic aesthetic UI adaptations.
 
 ---
 
@@ -39,20 +38,22 @@ AuraBeat is a premium, AI-driven music curation platform that translates your cu
 
 **Frontend (React & Vite)**
 * **Framework:** React 18
-* **Styling:** Tailwind CSS, Framer Motion
+* **Styling:** Tailwind CSS, Framer Motion (for dynamic UI components like `WaveformVisualizer` and `AuthModal`)
 * **Build Tool:** Vite
 * **Icons:** Lucide React
 
 **Backend (Node.js API)**
 * **Framework:** Express.js
-* **API Management:** Axios
-* **Security:** Dotenv
+* **Database:** MongoDB (Mongoose ODM)
+* **Authentication:** JWT (JSON Web Tokens) & bcryptjs
+* **Security:** Helmet, express-rate-limit, express-mongo-sanitize, hpp
 
 **AI & Cloud Services**
-* **AI Engine:** Google Gemini 2.5 Flash
+* **Primary AI Engine:** Google Gemini 2.5 Flash
+* **Fallback AI Engine:** Groq (Llama-3.3-70b-versatile)
 * **Video Content:** YouTube Data API v3
-* **Environmental Data:** Open-Meteo API
-* **Geocoding:** Nominatim (OpenStreetMap)
+* **Music Preferences:** Last.fm API
+* **Environmental Data:** Open-Meteo API & Nominatim (OpenStreetMap)
 
 ---
 
@@ -76,30 +77,37 @@ graph TD
     %% Cloud/API Layer
     subgraph Backend [Node + Express Backend]
         B["API Gateway / Router"]
+        DB[(MongoDB)]
         
         subgraph Pipeline [Context & Logic Pipeline]
-            C1["1. Environmental Fetch"]
-            C2["2. Prompt Construction"]
-            C3["3. AI Inference"]
-            C1 --> C2 --> C3
+            C1["1. Auth & History Fetch"]
+            C2["2. Environmental Fetch"]
+            C3["3. Prompt Construction"]
+            C4["4. AI Inference (Waterfall)"]
+            C1 --> C2 --> C3 --> C4
         end
         
         B <--> Pipeline
+        B <--> DB
     end
 
     %% Inference Layer
     subgraph Inference [External Services]
-        D["Gemini 2.5 Flash \n (AI Logic)"]
+        D["Gemini 2.5 Flash \n (Primary AI)"]
+        D2["Groq \n (Fallback AI)"]
         E["YouTube API \n (Video Search)"]
         F["Open-Meteo \n (Weather Data)"]
+        G["Last.fm \n (User Preferences)"]
     end
 
     %% Connections
     A <-->|POST Request| B
     
     Pipeline <--> D
+    Pipeline -.->|Fallback| D2
     Pipeline <--> E
     Pipeline <--> F
+    Pipeline <--> G
     
     B -->|JSON Payload| A
 ```
@@ -110,15 +118,7 @@ graph TD
 Built as a highly responsive single-page application utilizing Framer Motion. This ensures that the dynamic color palette shifts and complex visual feedback happen instantly without page reloads, providing a premium, native-feeling user experience.
 
 **`backend/` — Node.js AI Engine**
-Acts as the central orchestrator. It securely manages API keys (preventing exposure on the client) and handles the potentially heavy blocking calls to Gemini and third-party APIs asynchronously.
-
-### How the Components Are Connected
-
-**Data Flow & REST Actions:** The frontend captures the user's string input and local geocoordinates, dispatching them to the backend via a structured REST protocol. 
-
-**Context Integration:** The backend simultaneously fetches weather constraints and feeds them alongside the sentiment data into the Gemini prompt. 
-
-**Aesthetic Translation:** Gemini's response includes not just song recommendations, but explicit JSON aesthetic targets (color codes). The frontend maps these targets directly into the DOM using dynamic Tailwind injection, completing the cycle.
+Acts as the central orchestrator. It securely manages authentication, database interactions, and API keys. Crucially, it houses the **LLM Waterfall logic**, ensuring that if the primary Gemini AI fails, the request gracefully falls back to Groq without interrupting the user experience.
 
 ---
 
@@ -128,21 +128,11 @@ The application utilizes a multi-stage approach to refine raw user emotion into 
 
 | Stage | Responsibility |
 |-------|----------------|
-| 1. **Environmental Ingestion** | Resolves raw GPS coordinates into human-readable locations and fetches current weather state constraints. |
-| 2. **Sentiment Translation** | Gemini processes the user's prompt string to infer mood, tempo desires, and lyrical needs. |
-| 3. **Curation Engine** | Cross-references the sentiment against the environmental baseline to suggest an optimal track and matching color hex schema. |
-| 4. **Execution & Retrieval** | Interrogates the YouTube Data API to find the exact official video for the curated track. |
-
----
-
-## 🛠️ Third-Party Integration Stack
-
-| Service | Purpose |
-|---------|---------|
-| **Gemini 2.5 Flash API** | Advanced sentiment reasoning, song selection, and color theory formulation. |
-| **YouTube Data API v3** | Accurate retrieval of official music videos and audio tracks. |
-| **Open-Meteo API** | Live weather analytics without API key constraints. |
-| **Nominatim API** | Reverse geocoding of browser coordinates. |
+| 1. **Auth & Preferences** | Authenticates the user via JWT, retrieving their past mood history and fetching their favorite artists via Last.fm API. |
+| 2. **Environmental Ingestion** | Resolves raw GPS coordinates into human-readable locations and fetches current weather state constraints. |
+| 3. **Sentiment Translation** | The LLM processes the user's prompt string to infer mood, tempo desires, and lyrical needs. |
+| 4. **Curation Engine** | Cross-references the sentiment against the environmental baseline and user history to suggest an optimal track and matching color hex schema. |
+| 5. **Execution & Retrieval** | Interrogates the YouTube Data API to find the exact official video for the curated track. |
 
 ---
 
@@ -152,10 +142,13 @@ The application utilizes a multi-stage approach to refine raw user emotion into 
 aurabeat-root/
 ├── backend/                      # Production API Environment
 │   ├── scripts/                  # Utility & Debug routines
-│   ├── server.js                 # API Core & Gateway routing
+│   ├── server.js                 # API Core, Auth, & Gateway routing
 │   └── package.json
 ├── frontend/                     # Client Canvas Application
-│   ├── src/                      # UI Components & Framer Motion logic
+│   ├── src/
+│   │   ├── components/           # UI (AuthModal, SettingsPanel, WaveformVisualizer, etc.)
+│   │   ├── hooks/                # Custom React Hooks (useColorTransition, useMoodHistory)
+│   │   └── App.jsx               # Main Application State
 │   ├── public/                   # Static binary assets
 │   └── package.json
 ├── README.md                     # Master Documentation
@@ -168,14 +161,22 @@ aurabeat-root/
 
 ### 1. Prerequisites
 * Node.js (v18+)
-* NPM or Yarn
-* API Keys: [Google AI Studio (Gemini)](https://aistudio.google.com/) and [Google Cloud Console (YouTube)](https://console.cloud.google.com/).
+* MongoDB (Local instance or Atlas URI)
+* API Keys for: 
+  - [Google AI Studio (Gemini)](https://aistudio.google.com/)
+  - [Groq Cloud (Fallback AI)](https://console.groq.com/)
+  - [Google Cloud Console (YouTube)](https://console.cloud.google.com/)
+  - [Last.fm API](https://www.last.fm/api)
 
 ### 2. Environment Setup
 Create a `.env` file in the `/backend` directory:
 ```env
-GEMINI_API_KEY=your_gemini_key_here
 YOUTUBE_API_KEY=your_youtube_key_here
+GEMINI_API_KEY=your_gemini_key_here
+GROQ_API_KEY=your_groq_key_here
+LASTFM_API_KEY=your_lastfm_key_here
+MONGODB_URI=mongodb://localhost:27017/aurabeat
+JWT_SECRET=your_long_secure_random_string
 ```
 
 ### 3. Installation & Launch
